@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+
+{% block title %}Novo Empréstimo - Sistema de Empréstimos{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold text-gray-900">Novo Empréstimo</h1>
+        <p class="text-gray-600">Cadastre um novo empréstimo no sistema</p>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-6">
+        <form method="POST" class="space-y-6" id="loanForm">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="md:col-span-2">
+                    <label for="client_id" class="block text-sm font-medium text-gray-700">Cliente</label>
+                    <select name="client_id" id="client_id" required
+                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Selecione um cliente</option>
+                        {% for client in clients %}
+                        <option value="{{ client.id }}" {% if request.args.get('client_id') == client.id|string %}selected{% endif %}>
+                            {{ client.full_name }} - {{ client.document }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label for="amount" class="block text-sm font-medium text-gray-700">Valor do Empréstimo</label>
+                    <div class="mt-1 relative">
+                        <span class="absolute left-3 top-2 text-gray-500">R$</span>
+                        <input type="number" name="amount" id="amount" step="0.01" min="0" required
+                               class="block w-full pl-8 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                               placeholder="0,00">
+                    </div>
+                </div>
+
+                <div>
+                    <label for="interest_rate" class="block text-sm font-medium text-gray-700">Taxa de Juros (%)</label>
+                    <div class="mt-1 relative">
+                        <input type="number" name="interest_rate" id="interest_rate" step="0.01" min="0" required
+                               class="block w-full pr-8 pl-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                               placeholder="0,00">
+                        <span class="absolute right-3 top-2 text-gray-500">%</span>
+                    </div>
+                </div>
+
+                <div>
+                    <label for="loan_type" class="block text-sm font-medium text-gray-700">Tipo de Empréstimo</label>
+                    <select name="loan_type" id="loan_type" required
+                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <option value="single">Pagamento Único</option>
+                        <option value="installment">Parcelado</option>
+                    </select>
+                </div>
+
+                <div id="installments_field" class="hidden">
+                    <label for="installments" class="block text-sm font-medium text-gray-700">Número de Parcelas</label>
+                    <input type="number" name="installments" id="installments" min="2" max="60"
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                </div>
+
+                <div>
+                    <label for="loan_date" class="block text-sm font-medium text-gray-700">Data do Empréstimo</label>
+                    <input type="date" name="loan_date" id="loan_date" required
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                </div>
+
+                <div id="due_date_field">
+                    <label for="due_date" class="block text-sm font-medium text-gray-700">Data de Vencimento</label>
+                    <input type="date" name="due_date" id="due_date"
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                </div>
+            </div>
+
+            <!-- Resumo do Empréstimo -->
+            <div class="bg-blue-50 p-4 rounded-lg">
+                <h3 class="text-lg font-medium text-blue-900 mb-3">Resumo do Empréstimo</h3>
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <span class="text-blue-700">Valor Principal:</span>
+                        <span class="font-medium ml-2" id="summary_principal">R$ 0,00</span>
+                    </div>
+                    <div>
+                        <span class="text-blue-700">Total com Juros:</span>
+                        <span class="font-medium ml-2" id="summary_total">R$ 0,00</span>
+                    </div>
+                    <div id="summary_installment" class="hidden">
+                        <span class="text-blue-700">Valor da Parcela:</span>
+                        <span class="font-medium ml-2" id="summary_installment_amount">R$ 0,00</span>
+                    </div>
+                    <div>
+                        <span class="text-blue-700">Juros Total:</span>
+                        <span class="font-medium ml-2" id="summary_interest">R$ 0,00</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end space-x-4">
+                <a href="{{ url_for('loans') }}"
+                   class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition duration-200">
+                    Cancelar
+                </a>
+                <button type="submit"
+                        class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-200">
+                    <i class="fas fa-save mr-2"></i>Criar Empréstimo
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+        // Definir data mínima como hoje
+        const today = new Date();
+        const loanDateField = document.getElementById('loan_date');
+        const dueDateField = document.getElementById('due_date');
+
+        if (loanDateField) {
+            loanDateField.valueAsDate = today;
+        }
+        if (dueDateField) {
+            dueDateField.valueAsDate = today;
+        }
+
+            // Controlar campos baseado no tipo de empréstimo
+            const installmentsField = document.getElementById('installments_field');
+            const dueDateField = document.getElementById('due_date_field');
+            const summaryInstallment = document.getElementById('summary_installment');
+
+            function toggleFields() {
+                if (loanTypeSelect && loanTypeSelect.value === 'installment') {
+                    if (installmentsField) installmentsField.classList.remove('hidden');
+                    if (dueDateField) dueDateField.classList.add('hidden');
+                    if (summaryInstallment) summaryInstallment.classList.remove('hidden');
+                    document.getElementById('installments').required = true;
+                    document.getElementById('due_date').required = false;
+                } else {
+                    if (installmentsField) installmentsField.classList.add('hidden');
+                    if (dueDateField) dueDateField.classList.remove('hidden');
+                    if (summaryInstallment) summaryInstallment.classList.add('hidden');
+                    document.getElementById('installments').required = false;
+                    document.getElementById('due_date').required = true;
+                }
+                updateSummary(); // Atualizar resumo ao mudar tipo de empréstimo
+            }
+
+            if (loanTypeSelect) {
+                loanTypeSelect.addEventListener('change', toggleFields);
+                toggleFields(); // Executar na inicialização
+            }
+        });
+// Mostrar/ocultar campo de parcelas
+document.getElementById('loan_type').addEventListener('change', function(e) {
+    const installmentsField = document.getElementById('installments_field');
+    const dueDateField = document.getElementById('due_date_field');
+    const summaryInstallment = document.getElementById('summary_installment');
+
+    if (e.target.value === 'installment') {
+        installmentsField.classList.remove('hidden');
+        dueDateField.classList.add('hidden');
+        summaryInstallment.classList.remove('hidden');
+        document.getElementById('installments').required = true;
+        document.getElementById('due_date').required = false;
+    } else {
+        installmentsField.classList.add('hidden');
+        dueDateField.classList.remove('hidden');
+        summaryInstallment.classList.add('hidden');
+        document.getElementById('installments').required = false;
+        document.getElementById('due_date').required = true;
+    }
+    updateSummary();
+});
+
+// Atualizar resumo em tempo real
+function updateSummary() {
+    const amount = parseFloat(document.getElementById('amount').value) || 0;
+    const interestRate = parseFloat(document.getElementById('interest_rate').value) || 0;
+    const loanType = document.getElementById('loan_type').value;
+    const installments = parseInt(document.getElementById('installments').value) || 1;
+
+    const totalAmount = amount * (1 + interestRate / 100);
+    const interestAmount = totalAmount - amount;
+    const installmentAmount = totalAmount / installments;
+
+    document.getElementById('summary_principal').textContent = formatCurrency(amount);
+    document.getElementById('summary_total').textContent = formatCurrency(totalAmount);
+    document.getElementById('summary_interest').textContent = formatCurrency(interestAmount);
+    document.getElementById('summary_installment_amount').textContent = formatCurrency(installmentAmount);
+}
+
+// Adicionar listeners para atualizar resumo
+['amount', 'interest_rate', 'installments'].forEach(id => {
+    const element = document.getElementById(id);
+    if (element) {
+        element.addEventListener('input', updateSummary);
+    }
+});
+
+// Função para formatar moeda
+function formatCurrency(value) {
+    return new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: 'BRL'
+    }).format(value);
+}
+
+// Inicializar resumo
+updateSummary();
+</script>
+{% endblock %}

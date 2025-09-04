@@ -1,0 +1,151 @@
+
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Sistema de Empréstimos{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <h1 class="text-3xl font-bold text-gray-900">Dashboard</h1>
+    <p class="text-gray-600">Visão geral do seu negócio de empréstimos</p>
+</div>
+
+<!-- Cards de Estatísticas -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="flex items-center">
+            <div class="p-3 rounded-full bg-blue-500 text-white">
+                <i class="fas fa-hand-holding-usd text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Total Emprestado</p>
+                <p class="text-2xl font-bold text-gray-900 currency">{{ stats.total_lent }}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="flex items-center">
+            <div class="p-3 rounded-full bg-green-500 text-white">
+                <i class="fas fa-chart-line text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Total a Receber</p>
+                <p class="text-2xl font-bold text-gray-900 currency">{{ stats.total_to_receive }}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="flex items-center">
+            <div class="p-3 rounded-full bg-purple-500 text-white">
+                <i class="fas fa-wallet text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Total Recebido</p>
+                <p class="text-2xl font-bold text-gray-900 currency">{{ stats.total_received }}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="flex items-center">
+            <div class="p-3 rounded-full bg-red-500 text-white">
+                <i class="fas fa-exclamation-triangle text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Clientes em Atraso</p>
+                <p class="text-2xl font-bold text-gray-900">{{ stats.overdue_clients }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    <!-- Próximos Vencimentos -->
+    <div class="bg-white rounded-lg shadow">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <h3 class="text-lg font-medium text-gray-900">
+                <i class="fas fa-calendar-alt mr-2 text-blue-500"></i>
+                Próximos Vencimentos (7 dias)
+            </h3>
+        </div>
+        <div class="p-6">
+            {% if upcoming_loans %}
+                <div class="space-y-4">
+                    {% for loan in upcoming_loans %}
+                    <div class="flex items-center justify-between p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                        <div>
+                            <p class="font-medium text-gray-900">{{ loan.full_name }}</p>
+                            <p class="text-sm text-gray-600">Vencimento: {{ loan.due_date }}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="font-bold text-yellow-600 currency">{{ loan.total_amount }}</p>
+                            <a href="{{ url_for('loan_detail', loan_id=loan.id) }}" 
+                               class="text-sm text-blue-600 hover:text-blue-800">Ver detalhes</a>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="text-gray-500 text-center py-4">Nenhum vencimento próximo</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Empréstimos em Atraso -->
+    <div class="bg-white rounded-lg shadow">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <h3 class="text-lg font-medium text-gray-900">
+                <i class="fas fa-exclamation-circle mr-2 text-red-500"></i>
+                Empréstimos em Atraso
+            </h3>
+        </div>
+        <div class="p-6">
+            {% if overdue_loans %}
+                <div class="space-y-4">
+                    {% for loan in overdue_loans %}
+                    <div class="flex items-center justify-between p-4 bg-red-50 rounded-lg border border-red-200">
+                        <div>
+                            <p class="font-medium text-gray-900">{{ loan.full_name }}</p>
+                            <p class="text-sm text-gray-600">Venceu em: {{ loan.due_date }}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="font-bold text-red-600 currency">{{ loan.total_amount }}</p>
+                            <a href="{{ url_for('loan_detail', loan_id=loan.id) }}" 
+                               class="text-sm text-blue-600 hover:text-blue-800">Ver detalhes</a>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="text-gray-500 text-center py-4">Nenhum empréstimo em atraso</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Ações Rápidas -->
+<div class="mt-8 bg-white rounded-lg shadow p-6">
+    <h3 class="text-lg font-medium text-gray-900 mb-4">
+        <i class="fas fa-bolt mr-2 text-yellow-500"></i>
+        Ações Rápidas
+    </h3>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <a href="{{ url_for('add_client') }}" 
+           class="flex items-center p-4 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 transition duration-200">
+            <i class="fas fa-user-plus text-blue-500 text-xl mr-3"></i>
+            <span class="font-medium text-blue-700">Novo Cliente</span>
+        </a>
+        <a href="{{ url_for('add_loan') }}" 
+           class="flex items-center p-4 bg-green-50 rounded-lg border border-green-200 hover:bg-green-100 transition duration-200">
+            <i class="fas fa-plus-circle text-green-500 text-xl mr-3"></i>
+            <span class="font-medium text-green-700">Novo Empréstimo</span>
+        </a>
+        <a href="{{ url_for('loans') }}" 
+           class="flex items-center p-4 bg-purple-50 rounded-lg border border-purple-200 hover:bg-purple-100 transition duration-200">
+            <i class="fas fa-list text-purple-500 text-xl mr-3"></i>
+            <span class="font-medium text-purple-700">Ver Empréstimos</span>
+        </a>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,252 @@
+
+{% extends "base.html" %}
+
+{% block title %}Detalhes do Empréstimo - Sistema de Empréstimos{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">Detalhes do Empréstimo</h1>
+            <p class="text-gray-600">Empréstimo #{{ loan.id }} - {{ loan.full_name }}</p>
+        </div>
+        <a href="{{ url_for('loans') }}" 
+           class="text-blue-600 hover:text-blue-800">
+            <i class="fas fa-arrow-left mr-2"></i>Voltar
+        </a>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Informações do Cliente e Empréstimo -->
+        <div class="lg:col-span-2 space-y-6">
+            <!-- Dados do Cliente -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">
+                    <i class="fas fa-user mr-2 text-blue-500"></i>Informações do Cliente
+                </h3>
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <span class="text-gray-600">Nome:</span>
+                        <p class="font-medium">{{ loan.full_name }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">Documento:</span>
+                        <p class="font-medium">{{ loan.document }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">Telefone:</span>
+                        <p class="font-medium">{{ loan.phone or 'N/A' }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">E-mail:</span>
+                        <p class="font-medium">{{ loan.email or 'N/A' }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dados do Empréstimo -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">
+                    <i class="fas fa-hand-holding-usd mr-2 text-green-500"></i>Informações do Empréstimo
+                </h3>
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <span class="text-gray-600">Valor Principal:</span>
+                        <p class="font-medium text-lg currency">{{ loan.amount }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">Taxa de Juros:</span>
+                        <p class="font-medium text-lg">{{ loan.interest_rate }}%</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">Total a Receber:</span>
+                        <p class="font-medium text-lg currency">{{ loan.total_amount }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">Valor Restante:</span>
+                        <p class="font-medium text-lg currency {% if remaining > 0 %}text-red-600{% else %}text-green-600{% endif %}">
+                            {{ remaining }}
+                        </p>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">Data do Empréstimo:</span>
+                        <p class="font-medium">{{ loan.loan_date }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">Data de Vencimento:</span>
+                        <p class="font-medium {% if is_overdue %}text-red-600{% endif %}">
+                            {{ loan.due_date }}
+                        </p>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">Tipo:</span>
+                        <p class="font-medium">{{ 'Pagamento Único' if loan.loan_type == 'single' else 'Parcelado' }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">Status:</span>
+                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full 
+                                     {% if loan.status == 'active' %}bg-green-100 text-green-800{% else %}bg-gray-100 text-gray-800{% endif %}">
+                            {{ 'Ativo' if loan.status == 'active' else 'Quitado' }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Histórico de Pagamentos -->
+            <div class="bg-white rounded-lg shadow">
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <h3 class="text-lg font-medium text-gray-900">
+                        <i class="fas fa-history mr-2 text-purple-500"></i>Histórico de Pagamentos
+                    </h3>
+                </div>
+                <div class="p-6">
+                    {% if payments %}
+                        <div class="space-y-4">
+                            {% for payment in payments %}
+                            <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                                <div>
+                                    <p class="font-medium">{{ payment.payment_date }}</p>
+                                    <p class="text-sm text-gray-600">
+                                        Tipo: 
+                                        {% if payment.payment_type == 'interest' %}Apenas Juros
+                                        {% elif payment.payment_type == 'partial' %}Pagamento Parcial
+                                        {% else %}Quitação Total{% endif %}
+                                    </p>
+                                    {% if payment.notes %}
+                                        <p class="text-sm text-gray-500">{{ payment.notes }}</p>
+                                    {% endif %}
+                                </div>
+                                <div class="text-right">
+                                    <p class="font-bold text-green-600 currency">{{ payment.amount }}</p>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-gray-500 text-center py-8">Nenhum pagamento registrado</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar - Resumo e Ações -->
+        <div class="space-y-6">
+            <!-- Resumo Financeiro -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">Resumo Financeiro</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Total Emprestado:</span>
+                        <span class="font-medium currency">{{ loan.amount }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Total a Receber:</span>
+                        <span class="font-medium currency">{{ loan.total_amount }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Total Recebido:</span>
+                        <span class="font-medium text-green-600 currency">{{ total_paid }}</span>
+                    </div>
+                    <hr>
+                    <div class="flex justify-between text-lg">
+                        <span class="font-medium">Restante:</span>
+                        <span class="font-bold {% if remaining > 0 %}text-red-600{% else %}text-green-600{% endif %} currency">
+                            {{ remaining }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Registrar Pagamento -->
+            {% if loan.status == 'active' and remaining > 0 %}
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">Registrar Pagamento</h3>
+                <form method="POST" action="{{ url_for('add_payment', loan_id=loan.id) }}" class="space-y-4">
+                    <div>
+                        <label for="amount" class="block text-sm font-medium text-gray-700">Valor</label>
+                        <div class="mt-1 relative">
+                            <span class="absolute left-3 top-2 text-gray-500">R$</span>
+                            <input type="number" name="amount" id="amount" step="0.01" min="0.01" required
+                                   class="block w-full pl-8 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="payment_type" class="block text-sm font-medium text-gray-700">Tipo de Pagamento</label>
+                        <select name="payment_type" id="payment_type" required
+                                class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                            <option value="interest">Apenas Juros</option>
+                            <option value="partial">Pagamento Parcial</option>
+                            <option value="full">Quitação Total</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="payment_date" class="block text-sm font-medium text-gray-700">Data do Pagamento</label>
+                        <input type="date" name="payment_date" id="payment_date" required
+                               class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                </div>
+
+                <script>
+                document.addEventListener('DOMContentLoaded', function() {
+                    const today = new Date().toISOString().split('T')[0];
+                    const paymentDateElement = document.getElementById('payment_date');
+                    if (paymentDateElement) {
+                        paymentDateElement.value = today;
+                    }
+                });
+                </script>
+                    </div>
+
+                    <div>
+                        <label for="notes" class="block text-sm font-medium text-gray-700">Observações</label>
+                        <textarea name="notes" id="notes" rows="2"
+                                  class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                  placeholder="Observações sobre o pagamento..."></textarea>
+                    </div>
+
+                    <button type="submit" 
+                            class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                        <i class="fas fa-plus mr-2"></i>Registrar Pagamento
+                    </button>
+                </form>
+
+                <!-- Botões de ação rápida -->
+                <div class="mt-4 space-y-2">
+                    <button onclick="setQuickPayment({{ remaining }})" 
+                            class="w-full text-left px-3 py-2 text-sm bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 text-blue-700">
+                        <i class="fas fa-check-circle mr-2"></i>Quitar Total (R$ {{ "%.2f"|format(remaining) }})
+                    </button>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+// Definir data de hoje como padrão
+document.getElementById('payment_date').valueAsDate = new Date();
+
+// Função para pagamento rápido
+function setQuickPayment(amount) {
+    document.getElementById('amount').value = amount.toFixed(2);
+    document.getElementById('payment_type').value = 'full';
+}
+
+// Auto-ajustar tipo de pagamento baseado no valor
+document.getElementById('amount').addEventListener('input', function(e) {
+    const amount = parseFloat(e.target.value) || 0;
+    const remaining = {{ remaining }};
+    const paymentType = document.getElementById('payment_type');
+    
+    if (amount >= remaining) {
+        paymentType.value = 'full';
+    } else if (amount > 0) {
+        paymentType.value = 'partial';
+    }
+});
+</script>
+{% endblock %}

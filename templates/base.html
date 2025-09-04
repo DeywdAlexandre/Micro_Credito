@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Sistema de Empréstimos{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Formatação de moeda
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.currency').forEach(function(element) {
+                const value = parseFloat(element.textContent) || 0;
+                element.textContent = 'R$ ' + value.toLocaleString('pt-BR', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+            });
+
+            // Corrigir campos de data - definir data atual como padrão
+            const dateInputs = document.querySelectorAll('input[type="date"]');
+            dateInputs.forEach(function(input) {
+                if (!input.value) {
+                    const today = new Date();
+                    const formattedDate = today.toISOString().split('T')[0];
+                    input.value = formattedDate;
+                }
+            });
+        });
+    </script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    {% if session.user_id %}
+    <nav class="bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-xl">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center py-4">
+                <!-- Logo e Título -->
+                <div class="flex items-center space-x-3">
+                    <div class="bg-white bg-opacity-20 p-2 rounded-lg">
+                        <i class="fas fa-university text-2xl text-white"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-xl sm:text-2xl font-bold tracking-tight">Micro Créditos Urbano</h1>
+                        <p class="text-purple-100 text-xs hidden sm:block">Sistema de Gestão Financeira</p>
+                    </div>
+                </div>
+
+                <!-- Menu Desktop -->
+                <div class="hidden md:flex items-center space-x-2">
+                    <a href="{{ url_for('dashboard') }}" 
+                       class="flex items-center px-4 py-2 rounded-lg bg-white bg-opacity-10 hover:bg-opacity-20 transition duration-300 transform hover:scale-105">
+                        <i class="fas fa-chart-line mr-2"></i>
+                        <span class="font-medium">Dashboard</span>
+                    </a>
+                    <a href="{{ url_for('clients') }}" 
+                       class="flex items-center px-4 py-2 rounded-lg bg-white bg-opacity-10 hover:bg-opacity-20 transition duration-300 transform hover:scale-105">
+                        <i class="fas fa-users mr-2"></i>
+                        <span class="font-medium">Clientes</span>
+                    </a>
+                    
+                    <a href="{{ url_for('reports') }}" 
+                       class="flex items-center px-4 py-2 rounded-lg bg-white bg-opacity-10 hover:bg-opacity-20 transition duration-300 transform hover:scale-105">
+                        <i class="fas fa-chart-bar mr-2"></i>
+                        <span class="font-medium">Relatórios</span>
+                    </a>
+
+                    <!-- Separador -->
+                    <div class="w-px h-8 bg-purple-300 mx-2"></div>
+
+                    <!-- User Info -->
+                    <div class="flex items-center space-x-3">
+                        <div>
+                            <p class="text-sm font-medium">{{ session.username }}</p>
+                            <p class="text-xs text-purple-200">
+                                {% if session.role == 'master' %}Master Admin{% else %}Administrador{% endif %}
+                            </p>
+                        </div>
+                        <a href="{{ url_for('logout') }}" 
+                           class="flex items-center justify-center w-10 h-10 rounded-full bg-red-500 hover:bg-red-600 transition duration-300 transform hover:scale-110 shadow-lg">
+                            <i class="fas fa-sign-out-alt text-sm"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Menu Mobile Button -->
+                <div class="md:hidden">
+                    <button id="mobile-menu-button" class="flex items-center justify-center w-10 h-10 rounded-lg bg-white bg-opacity-20 hover:bg-opacity-30 transition duration-200">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Menu Mobile -->
+            <div id="mobile-menu" class="hidden md:hidden pb-4">
+                <div class="space-y-2">
+                    <a href="{{ url_for('dashboard') }}" 
+                       class="flex items-center px-4 py-3 rounded-lg bg-white bg-opacity-10 hover:bg-opacity-20 transition duration-200">
+                        <i class="fas fa-chart-line mr-3 w-5"></i>
+                        <span>Dashboard</span>
+                    </a>
+                    <a href="{{ url_for('clients') }}" 
+                       class="flex items-center px-4 py-3 rounded-lg bg-white bg-opacity-10 hover:bg-opacity-20 transition duration-200">
+                        <i class="fas fa-users mr-3 w-5"></i>
+                        <span>Clientes</span>
+                    </a>
+                    
+                    <a href="{{ url_for('reports') }}" 
+                       class="flex items-center px-4 py-3 rounded-lg bg-white bg-opacity-10 hover:bg-opacity-20 transition duration-200">
+                        <i class="fas fa-chart-bar mr-3 w-5"></i>
+                        <span>Relatórios</span>
+                    </a>
+
+                    <div class="border-t border-purple-400 pt-3 mt-3">
+                        <div class="flex items-center justify-between px-4 py-2">
+                            <div>
+                                <p class="font-medium">{{ session.username }}</p>
+                                <p class="text-sm text-purple-200">
+                                    {% if session.role == 'master' %}Master Admin{% else %}Administrador{% endif %}
+                                </p>
+                            </div>
+                            <a href="{{ url_for('logout') }}" 
+                               class="flex items-center justify-center w-10 h-10 rounded-full bg-red-500 hover:bg-red-600 transition duration-200">
+                                <i class="fas fa-sign-out-alt text-sm"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+    {% endif %}
+
+    <main class="{% if session.user_id %}max-w-7xl mx-auto px-4 py-6{% else %}min-h-screen flex items-center justify-center{% endif %}">
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <div class="mb-4">
+                    {% for message in messages %}
+                        <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-2" role="alert">
+                            <span class="block sm:inline">{{ message }}</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+
+    <script>
+        // Função para formatar moeda
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('pt-BR', {
+                style: 'currency',
+                currency: 'BRL'
+            }).format(value);
+        }
+
+        // Atualizar elementos com classe currency
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.currency').forEach(function(element) {
+                const value = parseFloat(element.textContent);
+                if (!isNaN(value)) {
+                    element.textContent = formatCurrency(value);
+                }
+            });
+
+            // Mobile menu toggle
+            const mobileMenuButton = document.getElementById('mobile-menu-button');
+            const mobileMenu = document.getElementById('mobile-menu');
+
+            if (mobileMenuButton && mobileMenu) {
+                mobileMenuButton.addEventListener('click', function() {
+                    mobileMenu.classList.toggle('hidden');
+                });
+            }
+        });
+    </script>
+</body>
+</html>

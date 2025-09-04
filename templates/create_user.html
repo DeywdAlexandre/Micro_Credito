@@ -1,0 +1,107 @@
+
+{% extends "base.html" %}
+
+{% block title %}Criar Usuário - Painel Administrativo{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold text-gray-900">
+            <i class="fas fa-user-plus text-purple-600 mr-2"></i>
+            Criar Novo Usuário
+        </h1>
+        <p class="text-gray-600">Cadastre um novo usuário no sistema de empréstimos</p>
+    </div>
+
+    <div class="bg-white rounded-lg shadow-lg p-6">
+        <form method="POST" class="space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="md:col-span-2">
+                    <label for="username" class="block text-sm font-medium text-gray-700">
+                        <i class="fas fa-user mr-1"></i>Nome de Usuário
+                    </label>
+                    <input type="text" name="username" id="username" required
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
+                           placeholder="Digite o nome de usuário">
+                </div>
+
+                <div class="md:col-span-2">
+                    <label for="password" class="block text-sm font-medium text-gray-700">
+                        <i class="fas fa-lock mr-1"></i>Senha
+                    </label>
+                    <input type="password" name="password" id="password" required
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
+                           placeholder="Digite a senha">
+                </div>
+
+                <div class="md:col-span-2">
+                    <label for="org_name" class="block text-sm font-medium text-gray-700">
+                        <i class="fas fa-building mr-1"></i>Nome da Organização
+                    </label>
+                    <input type="text" name="org_name" id="org_name" required list="organizations"
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
+                           placeholder="Digite ou selecione uma organização">
+                    <datalist id="organizations">
+                        {% for org in organizations %}
+                        <option value="{{ org.name }}">
+                        {% endfor %}
+                    </datalist>
+                </div>
+
+                <div>
+                    <label for="monthly_fee" class="block text-sm font-medium text-gray-700">
+                        <i class="fas fa-dollar-sign mr-1"></i>Valor Mensal (R$)
+                    </label>
+                    <input type="number" name="monthly_fee" id="monthly_fee" step="0.01" min="0" value="200.00" required
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
+                           placeholder="200.00">
+                </div>
+
+                <div>
+                    <label for="start_date" class="block text-sm font-medium text-gray-700">
+                        <i class="fas fa-calendar-alt mr-1"></i>Data de Início da Cobrança
+                    </label>
+                    <input type="date" name="start_date" id="start_date" required
+                           class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                </div>
+            </div>
+
+            <div class="bg-gray-50 p-4 rounded-lg">
+                <h3 class="text-sm font-medium text-gray-800 mb-2">
+                    <i class="fas fa-info-circle text-blue-500 mr-1"></i>Informações Importantes:
+                </h3>
+                <ul class="text-sm text-gray-600 space-y-1">
+                    <li>• O usuário terá acesso ao sistema de empréstimos da sua organização</li>
+                    <li>• A cobrança será realizada mensalmente a partir da data especificada</li>
+                    <li>• O valor pode ser alterado posteriormente se necessário</li>
+                    <li>• Cada organização mantém seus dados isolados</li>
+                </ul>
+            </div>
+
+            <div class="flex justify-end space-x-4">
+                <a href="{{ url_for('admin_panel') }}" 
+                   class="px-6 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition duration-200 flex items-center">
+                    <i class="fas fa-arrow-left mr-2"></i>Cancelar
+                </a>
+                <button type="submit" 
+                        class="px-6 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition duration-200 flex items-center">
+                    <i class="fas fa-save mr-2"></i>Criar Usuário
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+// Definir data de hoje como padrão
+document.getElementById('start_date').valueAsDate = new Date();
+
+// Formatação do valor monetário
+document.getElementById('monthly_fee').addEventListener('input', function(e) {
+    let value = parseFloat(e.target.value);
+    if (!isNaN(value)) {
+        e.target.value = value.toFixed(2);
+    }
+});
+</script>
+{% endblock %}

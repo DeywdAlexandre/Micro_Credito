@@ -1,0 +1,313 @@
+
+{% extends "base.html" %}
+
+{% block title %}Relatórios - Sistema de Empréstimos{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <h1 class="text-3xl font-bold text-gray-900">Relatórios de Lucro</h1>
+    <p class="text-gray-600">Visualize o lucro mensal do seu negócio</p>
+</div>
+
+<!-- Filtros -->
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+    <div class="flex flex-wrap items-center gap-4">
+        <div>
+            <label for="year-filter" class="block text-sm font-medium text-gray-700">Ano</label>
+            <select id="year-filter" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                <option value="">Todos os anos</option>
+            </select>
+        </div>
+        <div>
+            <label for="month-filter" class="block text-sm font-medium text-gray-700">Mês</label>
+            <select id="month-filter" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                <option value="">Todos os meses</option>
+                <option value="01">Janeiro</option>
+                <option value="02">Fevereiro</option>
+                <option value="03">Março</option>
+                <option value="04">Abril</option>
+                <option value="05">Maio</option>
+                <option value="06">Junho</option>
+                <option value="07">Julho</option>
+                <option value="08">Agosto</option>
+                <option value="09">Setembro</option>
+                <option value="10">Outubro</option>
+                <option value="11">Novembro</option>
+                <option value="12">Dezembro</option>
+            </select>
+        </div>
+        <div class="flex items-end">
+            <button onclick="updateReports()" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition duration-200">
+                <i class="fas fa-filter mr-2"></i>Filtrar
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Cards de Resumo -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="flex items-center">
+            <div class="p-3 rounded-full bg-green-500 text-white">
+                <i class="fas fa-chart-line text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Lucro Total</p>
+                <p id="total-profit" class="text-2xl font-bold text-gray-900 currency">0</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="flex items-center">
+            <div class="p-3 rounded-full bg-blue-500 text-white">
+                <i class="fas fa-calendar-alt text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Lucro Mês Atual</p>
+                <p id="current-month-profit" class="text-2xl font-bold text-gray-900 currency">0</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="flex items-center">
+            <div class="p-3 rounded-full bg-purple-500 text-white">
+                <i class="fas fa-trending-up text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Média Mensal</p>
+                <p id="average-profit" class="text-2xl font-bold text-gray-900 currency">0</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="flex items-center">
+            <div class="p-3 rounded-full bg-orange-500 text-white">
+                <i class="fas fa-percentage text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Margem Média</p>
+                <p id="average-margin" class="text-2xl font-bold text-gray-900">0%</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Gráfico -->
+<div class="bg-white rounded-lg shadow p-6 mb-8">
+    <h3 class="text-lg font-medium text-gray-900 mb-4">
+        <i class="fas fa-chart-bar mr-2 text-purple-500"></i>Evolução do Lucro Mensal
+    </h3>
+    <div class="h-96">
+        <canvas id="profitChart"></canvas>
+    </div>
+</div>
+
+<!-- Tabela Detalhada -->
+<div class="bg-white rounded-lg shadow">
+    <div class="px-6 py-4 border-b border-gray-200">
+        <h3 class="text-lg font-medium text-gray-900">
+            <i class="fas fa-table mr-2 text-purple-500"></i>Detalhamento Mensal
+        </h3>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200" id="profitTable">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mês/Ano</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Emprestado</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recebido</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lucro</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Margem</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Empréstimos</th>
+                </tr>
+            </thead>
+            <tbody id="profitTableBody" class="bg-white divide-y divide-gray-200">
+                <!-- Dados serão preenchidos via JavaScript -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+let profitChart;
+let profitData = [];
+
+// Inicializar quando a página carregar
+document.addEventListener('DOMContentLoaded', function() {
+    loadProfitData();
+    setupYearFilter();
+});
+
+function setupYearFilter() {
+    const yearFilter = document.getElementById('year-filter');
+    const currentYear = new Date().getFullYear();
+    
+    // Adicionar anos disponíveis (últimos 5 anos + próximos 2)
+    for (let year = currentYear - 5; year <= currentYear + 2; year++) {
+        const option = document.createElement('option');
+        option.value = year;
+        option.textContent = year;
+        if (year === currentYear) option.selected = true;
+        yearFilter.appendChild(option);
+    }
+}
+
+function loadProfitData() {
+    fetch('/api/profit_data')
+        .then(response => response.json())
+        .then(data => {
+            profitData = data;
+            updateReports();
+        })
+        .catch(error => {
+            console.error('Erro ao carregar dados:', error);
+        });
+}
+
+function updateReports() {
+    const yearFilter = document.getElementById('year-filter').value;
+    const monthFilter = document.getElementById('month-filter').value;
+    
+    // Filtrar dados
+    let filteredData = profitData;
+    if (yearFilter) {
+        filteredData = filteredData.filter(item => item.year == yearFilter);
+    }
+    if (monthFilter) {
+        filteredData = filteredData.filter(item => item.month == monthFilter);
+    }
+    
+    updateSummaryCards(filteredData);
+    updateChart(filteredData);
+    updateTable(filteredData);
+}
+
+function updateSummaryCards(data) {
+    const totalProfit = data.reduce((sum, item) => sum + item.profit, 0);
+    const currentMonth = new Date().getMonth() + 1;
+    const currentYear = new Date().getFullYear();
+    
+    const currentMonthData = data.find(item => 
+        item.month == currentMonth && item.year == currentYear
+    );
+    const currentMonthProfit = currentMonthData ? currentMonthData.profit : 0;
+    
+    const averageProfit = data.length > 0 ? totalProfit / data.length : 0;
+    const averageMargin = data.length > 0 ? 
+        data.reduce((sum, item) => sum + item.margin, 0) / data.length : 0;
+    
+    document.getElementById('total-profit').textContent = formatCurrency(totalProfit);
+    document.getElementById('current-month-profit').textContent = formatCurrency(currentMonthProfit);
+    document.getElementById('average-profit').textContent = formatCurrency(averageProfit);
+    document.getElementById('average-margin').textContent = averageMargin.toFixed(1) + '%';
+}
+
+function updateChart(data) {
+    const ctx = document.getElementById('profitChart').getContext('2d');
+    
+    if (profitChart) {
+        profitChart.destroy();
+    }
+    
+    const labels = data.map(item => `${item.month_name}/${item.year}`);
+    const profits = data.map(item => item.profit);
+    const lent = data.map(item => item.total_lent);
+    const received = data.map(item => item.total_received);
+    
+    profitChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Lucro',
+                data: profits,
+                backgroundColor: 'rgba(147, 51, 234, 0.8)',
+                borderColor: 'rgba(147, 51, 234, 1)',
+                borderWidth: 1
+            }, {
+                label: 'Emprestado',
+                data: lent,
+                backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                borderColor: 'rgba(59, 130, 246, 1)',
+                borderWidth: 1
+            }, {
+                label: 'Recebido',
+                data: received,
+                backgroundColor: 'rgba(16, 185, 129, 0.5)',
+                borderColor: 'rgba(16, 185, 129, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return 'R$ ' + value.toLocaleString('pt-BR');
+                        }
+                    }
+                }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.dataset.label + ': R$ ' + 
+                                   context.parsed.y.toLocaleString('pt-BR', {
+                                       minimumFractionDigits: 2
+                                   });
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function updateTable(data) {
+    const tableBody = document.getElementById('profitTableBody');
+    tableBody.innerHTML = '';
+    
+    data.forEach(item => {
+        const row = document.createElement('tr');
+        row.className = 'hover:bg-gray-50';
+        
+        row.innerHTML = `
+            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                ${item.month_name}/${item.year}
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                ${formatCurrency(item.total_lent)}
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                ${formatCurrency(item.total_received)}
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium ${item.profit >= 0 ? 'text-green-600' : 'text-red-600'}">
+                ${formatCurrency(item.profit)}
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                ${item.margin.toFixed(1)}%
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                ${item.loan_count}
+            </td>
+        `;
+        
+        tableBody.appendChild(row);
+    });
+}
+
+function formatCurrency(value) {
+    return new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: 'BRL'
+    }).format(value);
+}
+</script>
+{% endblock %}

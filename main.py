@@ -1,184 +1,52 @@
-
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, flash
-import sqlite3
+import psycopg2
+from psycopg2 import extras
 import hashlib
 import datetime
 from decimal import Decimal
 import os
+import re
 
 app = Flask(__name__)
-app.secret_key = 'seu_secret_key_aqui'
+app.secret_key = os.environ.get('SECRET_KEY', 'seu_secret_key_aqui')
 
-# Configuração do banco de dados
-def init_db():
-    conn = sqlite3.connect('loan_management.db')
-    c = conn.cursor()
-    
-    # Verificar se as tabelas já existem
-    tables_exist = c.execute("""
-        SELECT name FROM sqlite_master 
-        WHERE type='table' AND name IN ('users', 'organizations', 'user_billing')
-    """).fetchall()
-    
-    # Se as tabelas principais não existem, criar todas
-    if len(tables_exist) < 2:
-        c.execute("DROP TABLE IF EXISTS payments")
-        c.execute("DROP TABLE IF EXISTS loans") 
-        c.execute("DROP TABLE IF EXISTS clients")
-        c.execute("DROP TABLE IF EXISTS user_billing")
-        c.execute("DROP TABLE IF EXISTS users")
-        c.execute("DROP TABLE IF EXISTS organizations")
-        
-        # Tabela de organizações
-        c.execute('''CREATE TABLE organizations (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        name TEXT NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )''')
-        
-        # Tabela de usuários
-        c.execute('''CREATE TABLE users (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        username TEXT UNIQUE NOT NULL,
-                        password TEXT NOT NULL,
-                        role TEXT DEFAULT 'user',
-                        organization_id INTEGER,
-                        monthly_fee DECIMAL(10,2) DEFAULT 29.90,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (organization_id) REFERENCES organizations (id)
-                    )''')
-        
-        # Tabela de clientes
-        c.execute('''CREATE TABLE clients (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        full_name TEXT NOT NULL,
-                        document TEXT NOT NULL,
-                        phone TEXT,
-                        email TEXT,
-                        address TEXT,
-                        organization_id INTEGER NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (organization_id) REFERENCES organizations (id),
-                        UNIQUE(document, organization_id)
-                    )''')
-        
-        # Tabela de empréstimos
-        c.execute('''CREATE TABLE loans (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        client_id INTEGER,
-                        amount DECIMAL(10,2) NOT NULL,
-                        interest_rate DECIMAL(5,2) NOT NULL,
-                        loan_type TEXT NOT NULL,
-                        installments INTEGER DEFAULT 1,
-                        installment_amount DECIMAL(10,2),
-                        total_amount DECIMAL(10,2),
-                        loan_date DATE NOT NULL,
-                        due_date DATE,
-                        status TEXT DEFAULT 'active',
-                        organization_id INTEGER NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (client_id) REFERENCES clients (id),
-                        FOREIGN KEY (organization_id) REFERENCES organizations (id)
-                    )''')
-        
-        # Tabela de pagamentos
-        c.execute('''CREATE TABLE payments (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        loan_id INTEGER,
-                        amount DECIMAL(10,2) NOT NULL,
-                        payment_type TEXT NOT NULL,
-                        payment_date DATE NOT NULL,
-                        notes TEXT,
-                        organization_id INTEGER NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (loan_id) REFERENCES loans (id),
-                        FOREIGN KEY (organization_id) REFERENCES organizations (id)
-                    )''')
-    else:
-        # Verificar se as colunas monthly_fee e start_date existem
-        columns = c.execute("PRAGMA table_info(users)").fetchall()
-        column_names = [column[1] for column in columns]
-        if 'monthly_fee' not in column_names:
-            c.execute('ALTER TABLE users ADD COLUMN monthly_fee DECIMAL(10,2) DEFAULT 29.90')
-        if 'start_date' not in column_names:
-            c.execute('ALTER TABLE users ADD COLUMN start_date DATE')
-            c.execute("UPDATE users SET start_date = date('now') WHERE start_date IS NULL")
-    
-    # Verificar se a tabela de cobrança existe
-    billing_exists = c.execute("""
-        SELECT name FROM sqlite_master 
-        WHERE type='table' AND name='user_billing'
-    """).fetchone()
-    
-    if not billing_exists:
-        # Tabela de cobrança mensal
-        c.execute('''CREATE TABLE user_billing (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id INTEGER NOT NULL,
-                        month_year TEXT NOT NULL,
-                        amount DECIMAL(10,2) NOT NULL,
-                        payment_date DATE,
-                        status TEXT DEFAULT 'pending',
-                        start_date DATE,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (user_id) REFERENCES users (id),
-                        UNIQUE(user_id, month_year)
-                    )''')
-    else:
-        # Verificar se a coluna start_date existe
-        columns = c.execute("PRAGMA table_info(user_billing)").fetchall()
-        column_names = [column[1] for column in columns]
-        if 'start_date' not in column_names:
-            c.execute('ALTER TABLE user_billing ADD COLUMN start_date DATE')
-    
-    # Criar organização master se não existir (apenas na primeira criação)
-    if len(tables_exist) < 2:
-        c.execute('''INSERT INTO organizations (id, name) 
-                     VALUES (0, 'Master Admin')''')
-        
-        # Criar usuário master Marina
-        marina_password = hashlib.sha256('1316031119'.encode()).hexdigest()
-        c.execute('''INSERT INTO users (username, password, role, organization_id) 
-                     VALUES (?, ?, ?, ?)''', ('Marina', marina_password, 'master', 0))
-    
-    conn.commit()
-    conn.close()
-
+# Função de conexão com o banco de dados do Vercel Postgres
 def get_db_connection():
-    conn = sqlite3.connect('loan_management.db')
-    conn.row_factory = sqlite3.Row
+    db_url = os.environ.get('POSTGRES_URL')
+    if not db_url:
+        # Se a variável de ambiente não estiver configurada (local), use um padrão de desenvolvimento
+        # A sintaxe de URL é 'postgresql://usuario:senha@host:porta/database'
+        # Isso é um fallback para rodar localmente se você configurar o Postgres
+        raise Exception("POSTGRES_URL não está configurada. Configure a variável de ambiente no Vercel ou localmente.")
+
+    conn = psycopg2.connect(db_url)
     return conn
 
-# Função para inserir dados de exemplo apenas se necessário
-def insert_sample_data():
-    conn = get_db_connection()
-    
-    # Verificar se já existem dados
-    existing_users = conn.execute('SELECT COUNT(*) as count FROM users WHERE role != "master"').fetchone()
-    
-    # Só inserir se não houver usuários (primeira execução)
-    if existing_users['count'] == 0:
-        # Criar organização master se não existir
-        master_org = conn.execute('SELECT id FROM organizations WHERE id = 0').fetchone()
-        if not master_org:
-            conn.execute('''INSERT OR IGNORE INTO organizations (id, name) 
-                           VALUES (0, 'Master Admin')''')
-        
-        # Criar usuário master Marina se não existir
-        marina = conn.execute('SELECT id FROM users WHERE username = "Marina"').fetchone()
-        if not marina:
-            marina_password = hashlib.sha256('1316031119'.encode()).hexdigest()
-            conn.execute('''INSERT OR IGNORE INTO users (username, password, role, organization_id) 
-                           VALUES (?, ?, ?, ?)''', ('Marina', marina_password, 'master', 0))
-    
-    # Atualizar usuários existentes com valor de R$ 200 mensais se ainda estão com valor padrão
-    conn.execute('''UPDATE users SET monthly_fee = 200.00 
-                    WHERE role != 'master' AND (monthly_fee = 29.90 OR monthly_fee IS NULL)''')
-    
-    conn.commit()
-    conn.close()
+# Funções auxiliares (Middleware, etc.)
+def login_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
-# Rotas de autenticação
+def master_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session or session.get('role') != 'master':
+            flash('Acesso negado!')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def get_user_organization():
+    return session.get('organization_id')
+
+# ROTAS DE AUTENTICAÇÃO
+# ---
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -186,10 +54,12 @@ def login():
         password = hashlib.sha256(request.form['password'].encode()).hexdigest()
         
         conn = get_db_connection()
-        user = conn.execute(
-            'SELECT u.*, o.name as org_name FROM users u LEFT JOIN organizations o ON u.organization_id = o.id WHERE u.username = ? AND u.password = ?',
+        cur = conn.cursor(cursor_factory=extras.DictCursor)
+        cur.execute(
+            'SELECT u.*, o.name as org_name FROM users u LEFT JOIN organizations o ON u.organization_id = o.id WHERE u.username = %s AND u.password = %s',
             (username, password)
-        ).fetchone()
+        )
+        user = cur.fetchone()
         conn.close()
         
         if user:
@@ -213,78 +83,59 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-# Middleware para verificar autenticação
-def login_required(f):
-    from functools import wraps
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return decorated_function
-
-# Função para verificar se é master admin
-def master_required(f):
-    from functools import wraps
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session or session.get('role') != 'master':
-            flash('Acesso negado!')
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return decorated_function
-
-# Função para filtrar por organização
-def get_user_organization():
-    return session.get('organization_id')
-
-# Painel administrativo (apenas para Marina)
+# ROTAS DO PAINEL ADMIN
+# ---
 @app.route('/admin')
 @master_required
 def admin_panel():
     conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=extras.DictCursor)
     current_month = datetime.date.today().strftime('%Y-%m')
     
     # Buscar todas as organizações
-    organizations = conn.execute('''
+    cur.execute('''
         SELECT o.*, COUNT(u.id) as user_count 
         FROM organizations o 
         LEFT JOIN users u ON o.id = u.organization_id 
         WHERE o.id > 0
         GROUP BY o.id 
         ORDER BY o.name
-    ''').fetchall()
+    ''')
+    organizations = cur.fetchall()
     
     # Buscar usuários com informações de cobrança
-    users = conn.execute('''
+    cur.execute('''
         SELECT u.*, o.name as org_name,
                ub.status as payment_status,
                ub.payment_date as last_payment,
                CASE 
-                   WHEN u.start_date <= date('now', 'start of month') THEN 'active'
+                   WHEN u.start_date <= date_trunc('month', NOW()) THEN 'active'
                    ELSE 'future'
                END as billing_status
         FROM users u 
         JOIN organizations o ON u.organization_id = o.id 
-        LEFT JOIN user_billing ub ON u.id = ub.user_id AND ub.month_year = ?
+        LEFT JOIN user_billing ub ON u.id = ub.user_id AND ub.month_year = %s
         WHERE u.role != 'master'
         ORDER BY o.name, u.username
-    ''', (current_month,)).fetchall()
+    ''', (current_month,))
+    users = cur.fetchall()
     
     # Calcular estatísticas
-    monthly_revenue = conn.execute('''
+    cur.execute('''
         SELECT SUM(amount) as total 
         FROM user_billing 
-        WHERE month_year = ? AND status = 'paid'
-    ''', (current_month,)).fetchone()
+        WHERE month_year = %s AND status = 'paid'
+    ''', (current_month,))
+    monthly_revenue = cur.fetchone()
     
-    overdue_payments = conn.execute('''
+    cur.execute('''
         SELECT COUNT(*) as count 
         FROM user_billing 
         WHERE status = 'overdue'
-    ''').fetchone()
+    ''')
+    overdue_payments = cur.fetchone()
     
-    recent_payments = conn.execute('''
+    cur.execute('''
         SELECT ub.*, u.username, o.name as org_name
         FROM user_billing ub
         JOIN users u ON ub.user_id = u.id
@@ -292,45 +143,46 @@ def admin_panel():
         WHERE ub.status = 'paid'
         ORDER BY ub.payment_date DESC
         LIMIT 10
-    ''').fetchall()
+    ''')
+    recent_payments = cur.fetchall()
     
     conn.close()
     
     return render_template('admin_panel.html', 
-                         organizations=organizations, 
-                         users=users,
-                         monthly_revenue=float(monthly_revenue['total']) if monthly_revenue['total'] else 0,
-                         overdue_payments=overdue_payments['count'],
-                         recent_payments=recent_payments)
+                          organizations=organizations, 
+                          users=users,
+                          monthly_revenue=float(monthly_revenue['total']) if monthly_revenue and monthly_revenue['total'] else 0,
+                          overdue_payments=overdue_payments['count'],
+                          recent_payments=recent_payments)
 
-# Rotas de cobrança
 @app.route('/admin/mark_payment_paid/<int:user_id>', methods=['POST'])
 @master_required
 def mark_payment_paid(user_id):
     current_month = datetime.date.today().strftime('%Y-%m')
     conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=extras.DictCursor)
     
     try:
-        # Buscar valor mensal e data de início do usuário
-        user = conn.execute('SELECT monthly_fee, start_date FROM users WHERE id = ?', (user_id,)).fetchone()
+        cur.execute('SELECT monthly_fee, start_date FROM users WHERE id = %s', (user_id,))
+        user = cur.fetchone()
         
-        # Verificar se o usuário deve ser cobrado neste mês
-        if user['start_date']:
-            start_date = datetime.datetime.strptime(user['start_date'], '%Y-%m-%d').date()
+        if user and user['start_date']:
+            start_date = user['start_date']
             current_month_date = datetime.date.today().replace(day=1)
             
             if start_date > current_month_date:
                 return jsonify({'success': False, 'error': 'Usuário ainda não deve ser cobrado neste mês'})
         
-        # Inserir ou atualizar cobrança
-        conn.execute('''
-            INSERT OR REPLACE INTO user_billing (user_id, month_year, amount, payment_date, status, start_date)
-            VALUES (?, ?, ?, ?, 'paid', ?)
+        cur.execute('''
+            INSERT INTO user_billing (user_id, month_year, amount, payment_date, status, start_date)
+            VALUES (%s, %s, %s, %s, 'paid', %s)
+            ON CONFLICT (user_id, month_year) DO UPDATE SET amount = EXCLUDED.amount, payment_date = EXCLUDED.payment_date, status = 'paid'
         ''', (user_id, current_month, user['monthly_fee'], datetime.date.today(), user['start_date']))
         
         conn.commit()
         return jsonify({'success': True})
     except Exception as e:
+        conn.rollback()
         return jsonify({'success': False, 'error': str(e)})
     finally:
         conn.close()
@@ -339,17 +191,18 @@ def mark_payment_paid(user_id):
 @master_required
 def delete_user(user_id):
     conn = get_db_connection()
+    cur = conn.cursor()
     try:
-        # Excluir dados relacionados primeiro
-        conn.execute('DELETE FROM user_billing WHERE user_id = ?', (user_id,))
-        conn.execute('DELETE FROM payments WHERE organization_id = (SELECT organization_id FROM users WHERE id = ?)', (user_id,))
-        conn.execute('DELETE FROM loans WHERE organization_id = (SELECT organization_id FROM users WHERE id = ?)', (user_id,))
-        conn.execute('DELETE FROM clients WHERE organization_id = (SELECT organization_id FROM users WHERE id = ?)', (user_id,))
-        conn.execute('DELETE FROM users WHERE id = ?', (user_id,))
+        cur.execute('DELETE FROM user_billing WHERE user_id = %s', (user_id,))
+        cur.execute('DELETE FROM payments WHERE organization_id = (SELECT organization_id FROM users WHERE id = %s)', (user_id,))
+        cur.execute('DELETE FROM loans WHERE organization_id = (SELECT organization_id FROM users WHERE id = %s)', (user_id,))
+        cur.execute('DELETE FROM clients WHERE organization_id = (SELECT organization_id FROM users WHERE id = %s)', (user_id,))
+        cur.execute('DELETE FROM users WHERE id = %s', (user_id,))
         
         conn.commit()
         return jsonify({'success': True})
     except Exception as e:
+        conn.rollback()
         return jsonify({'success': False, 'error': str(e)})
     finally:
         conn.close()
@@ -360,15 +213,17 @@ def update_user_fee(user_id):
     data = request.get_json()
     monthly_fee = data.get('monthly_fee')
     
-    if not monthly_fee or monthly_fee <= 0:
+    if not monthly_fee or float(monthly_fee) <= 0:
         return jsonify({'success': False, 'error': 'Valor inválido'})
     
     conn = get_db_connection()
+    cur = conn.cursor()
     try:
-        conn.execute('UPDATE users SET monthly_fee = ? WHERE id = ?', (monthly_fee, user_id))
+        cur.execute('UPDATE users SET monthly_fee = %s WHERE id = %s', (monthly_fee, user_id))
         conn.commit()
         return jsonify({'success': True})
     except Exception as e:
+        conn.rollback()
         return jsonify({'success': False, 'error': str(e)})
     finally:
         conn.close()
@@ -378,28 +233,30 @@ def update_user_fee(user_id):
 def mark_all_payments_paid():
     current_month = datetime.date.today().strftime('%Y-%m')
     conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=extras.DictCursor)
     
     try:
-        # Buscar usuários pendentes que devem ser cobrados
-        users = conn.execute('''
+        cur.execute('''
             SELECT u.id, u.monthly_fee, u.start_date 
             FROM users u 
-            LEFT JOIN user_billing ub ON u.id = ub.user_id AND ub.month_year = ?
+            LEFT JOIN user_billing ub ON u.id = ub.user_id AND ub.month_year = %s
             WHERE u.role != 'master' 
-            AND (u.start_date IS NULL OR u.start_date <= date('now', 'start of month'))
+            AND (u.start_date IS NULL OR u.start_date <= date_trunc('month', NOW()))
             AND (ub.status IS NULL OR ub.status != 'paid')
-        ''', (current_month,)).fetchall()
+        ''', (current_month,))
+        users = cur.fetchall()
         
-        # Marcar todos como pagos
         for user in users:
-            conn.execute('''
-                INSERT OR REPLACE INTO user_billing (user_id, month_year, amount, payment_date, status, start_date)
-                VALUES (?, ?, ?, ?, 'paid', ?)
-            ''', (user['id'], current_month, user['monthly_fee'], datetime.date.today(), user['start_date']))
+            cur.execute('''
+                INSERT INTO user_billing (user_id, month_year, amount, payment_date, status, start_date)
+                VALUES (%s, %s, %s, %s, 'paid', %s)
+                ON CONFLICT (user_id, month_year) DO UPDATE SET amount = EXCLUDED.amount, payment_date = EXCLUDED.payment_date, status = 'paid'
+            ''', (user['id'], user['monthly_fee'], datetime.date.today(), current_month, user['start_date']))
         
         conn.commit()
         return jsonify({'success': True})
     except Exception as e:
+        conn.rollback()
         return jsonify({'success': False, 'error': str(e)})
     finally:
         conn.close()
@@ -411,115 +268,122 @@ def create_user():
         username = request.form['username']
         password = hashlib.sha256(request.form['password'].encode()).hexdigest()
         org_name = request.form['org_name']
-        monthly_fee = float(request.form['monthly_fee'])
+        monthly_fee = Decimal(request.form['monthly_fee'])
         start_date = datetime.datetime.strptime(request.form['start_date'], '%Y-%m-%d').date()
         
         conn = get_db_connection()
-        c = conn.cursor()
+        cur = conn.cursor()
         try:
-            # Criar organização se não existir
-            org = conn.execute('SELECT id FROM organizations WHERE name = ?', (org_name,)).fetchone()
+            cur.execute('SELECT id FROM organizations WHERE name = %s', (org_name,))
+            org = cur.fetchone()
             if not org:
-                c.execute('INSERT INTO organizations (name) VALUES (?)', (org_name,))
-                org_id = c.lastrowid
+                cur.execute('INSERT INTO organizations (name) VALUES (%s) RETURNING id', (org_name,))
+                org_id = cur.fetchone()[0]
             else:
-                org_id = org['id']
+                org_id = org[0]
             
-            # Criar usuário
-            c.execute('''
+            cur.execute('''
                 INSERT INTO users (username, password, role, organization_id, monthly_fee, start_date)
-                VALUES (?, ?, 'user', ?, ?, ?)
+                VALUES (%s, %s, 'user', %s, %s, %s)
             ''', (username, password, org_id, monthly_fee, start_date))
             
             conn.commit()
             flash(f'Usuário {username} criado com sucesso! Valor mensal: R$ {monthly_fee:.2f}')
             return redirect(url_for('admin_panel'))
             
-        except sqlite3.IntegrityError:
+        except psycopg2.errors.UniqueViolation:
+            conn.rollback()
             flash('Nome de usuário já existe!')
+        except Exception as e:
+            conn.rollback()
+            flash(f'Erro ao criar usuário: {str(e)}')
         finally:
             conn.close()
     
     conn = get_db_connection()
-    organizations = conn.execute('SELECT * FROM organizations WHERE id > 0 ORDER BY name').fetchall()
+    cur = conn.cursor(cursor_factory=extras.DictCursor)
+    cur.execute('SELECT * FROM organizations WHERE id > 0 ORDER BY name')
+    organizations = cur.fetchall()
     conn.close()
     
     return render_template('create_user.html', organizations=organizations)
 
-# Rotas principais
+# ROTAS PRINCIPAIS
+# ---
 @app.route('/')
 @login_required
 def dashboard():
-    # Verificar se é master admin
     if session.get('role') == 'master':
         return redirect(url_for('admin_panel'))
     
     org_id = get_user_organization()
     conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=extras.DictCursor)
     
-    # Estatísticas do dashboard
     stats = {}
     
-    # Total emprestado
-    result = conn.execute('SELECT SUM(amount) as total FROM loans WHERE status = "active" AND organization_id = ?', (org_id,)).fetchone()
-    stats['total_lent'] = float(result['total']) if result['total'] else 0
+    cur.execute('SELECT SUM(amount) as total FROM loans WHERE status = %s AND organization_id = %s', ('active', org_id))
+    result = cur.fetchone()
+    stats['total_lent'] = float(result['total']) if result and result['total'] else 0
     
-    # Total a receber
-    result = conn.execute('SELECT SUM(total_amount) as total FROM loans WHERE status = "active" AND organization_id = ?', (org_id,)).fetchone()
-    stats['total_to_receive'] = float(result['total']) if result['total'] else 0
+    cur.execute('SELECT SUM(total_amount) as total FROM loans WHERE status = %s AND organization_id = %s', ('active', org_id))
+    result = cur.fetchone()
+    stats['total_to_receive'] = float(result['total']) if result and result['total'] else 0
     
-    # Total recebido
-    result = conn.execute('SELECT SUM(amount) as total FROM payments WHERE organization_id = ?', (org_id,)).fetchone()
-    stats['total_received'] = float(result['total']) if result['total'] else 0
+    cur.execute('SELECT SUM(amount) as total FROM payments WHERE organization_id = %s', (org_id,))
+    result = cur.fetchone()
+    stats['total_received'] = float(result['total']) if result and result['total'] else 0
     
-    # Clientes em atraso
     today = datetime.date.today()
-    result = conn.execute('''SELECT COUNT(DISTINCT l.client_id) as count 
-                            FROM loans l WHERE l.due_date < ? AND l.status = "active" AND l.organization_id = ?''', 
-                         (today, org_id)).fetchone()
-    stats['overdue_clients'] = result['count'] if result['count'] else 0
+    cur.execute('''SELECT COUNT(DISTINCT l.client_id) as count 
+                                 FROM loans l WHERE l.due_date < %s AND l.status = %s AND l.organization_id = %s''', 
+                               (today, 'active', org_id))
+    result = cur.fetchone()
+    stats['overdue_clients'] = result['count'] if result else 0
     
-    # Próximos vencimentos (próximos 7 dias)
     next_week = today + datetime.timedelta(days=7)
-    upcoming_loans = conn.execute('''
+    cur.execute('''
         SELECT l.*, c.full_name 
         FROM loans l 
         JOIN clients c ON l.client_id = c.id 
-        WHERE l.due_date BETWEEN ? AND ? AND l.status = "active" AND l.organization_id = ?
+        WHERE l.due_date BETWEEN %s AND %s AND l.status = %s AND l.organization_id = %s
         ORDER BY l.due_date
-    ''', (today, next_week, org_id)).fetchall()
+    ''', (today, next_week, 'active', org_id))
+    upcoming_loans = cur.fetchall()
     
-    # Empréstimos em atraso
-    overdue_loans = conn.execute('''
+    cur.execute('''
         SELECT l.*, c.full_name 
         FROM loans l 
         JOIN clients c ON l.client_id = c.id 
-        WHERE l.due_date < ? AND l.status = "active" AND l.organization_id = ?
+        WHERE l.due_date < %s AND l.status = %s AND l.organization_id = %s
         ORDER BY l.due_date
-    ''', (today, org_id)).fetchall()
+    ''', (today, 'active', org_id))
+    overdue_loans = cur.fetchall()
     
     conn.close()
     
     return render_template('dashboard.html', 
-                         stats=stats, 
-                         upcoming_loans=upcoming_loans,
-                         overdue_loans=overdue_loans)
+                          stats=stats, 
+                          upcoming_loans=upcoming_loans,
+                          overdue_loans=overdue_loans)
 
 @app.route('/clients')
 @login_required
 def clients():
     org_id = get_user_organization()
     conn = get_db_connection()
-    clients = conn.execute('''
+    cur = conn.cursor(cursor_factory=extras.DictCursor)
+    cur.execute('''
         SELECT c.*, 
                COUNT(l.id) as loan_count,
-               SUM(CASE WHEN l.status = "active" THEN l.total_amount ELSE 0 END) as total_debt
+               SUM(CASE WHEN l.status = 'active' THEN l.total_amount ELSE 0 END) as total_debt
         FROM clients c
-        LEFT JOIN loans l ON c.id = l.client_id AND l.organization_id = ?
-        WHERE c.organization_id = ?
+        LEFT JOIN loans l ON c.id = l.client_id AND l.organization_id = %s
+        WHERE c.organization_id = %s
         GROUP BY c.id
         ORDER BY c.full_name
-    ''', (org_id, org_id)).fetchall()
+    ''', (org_id, org_id))
+    clients = cur.fetchall()
     conn.close()
     
     return render_template('clients.html', clients=clients)
@@ -530,10 +394,11 @@ def add_client():
     org_id = get_user_organization()
     if request.method == 'POST':
         conn = get_db_connection()
+        cur = conn.cursor()
         try:
-            conn.execute('''
+            cur.execute('''
                 INSERT INTO clients (full_name, document, phone, email, address, organization_id)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s)
             ''', (
                 request.form['full_name'],
                 request.form['document'],
@@ -545,8 +410,12 @@ def add_client():
             conn.commit()
             flash('Cliente cadastrado com sucesso!')
             return redirect(url_for('clients'))
-        except sqlite3.IntegrityError:
+        except psycopg2.errors.UniqueViolation:
+            conn.rollback()
             flash('Documento já cadastrado nesta organização!')
+        except Exception as e:
+            conn.rollback()
+            flash(f'Erro ao adicionar cliente: {str(e)}')
         finally:
             conn.close()
     
@@ -557,27 +426,27 @@ def add_client():
 def loans():
     org_id = get_user_organization()
     conn = get_db_connection()
-    loans = conn.execute('''
+    cur = conn.cursor(cursor_factory=extras.DictCursor)
+    cur.execute('''
         SELECT l.*, c.full_name, c.document,
                (l.total_amount - COALESCE(SUM(p.amount), 0)) as remaining_amount
         FROM loans l
         JOIN clients c ON l.client_id = c.id
         LEFT JOIN payments p ON l.id = p.loan_id
-        WHERE l.organization_id = ?
+        WHERE l.organization_id = %s
         GROUP BY l.id
         ORDER BY l.loan_date DESC
-    ''', (org_id,)).fetchall()
+    ''', (org_id,))
+    loans = cur.fetchall()
     conn.close()
     
-    # Converter para lista de dicionários para facilitar o processamento
     loans_list = []
     today = datetime.date.today()
     
     for loan in loans:
         loan_dict = dict(loan)
-        # Determinar se está em atraso
-        due_date = datetime.datetime.strptime(loan['due_date'], '%Y-%m-%d').date()
-        if loan['status'] == 'active' and due_date < today:
+        loan_dict['due_date'] = loan_dict['due_date'].strftime('%Y-%m-%d')
+        if loan['status'] == 'active' and loan_dict['due_date'] < today.strftime('%Y-%m-%d'):
             loan_dict['is_overdue'] = True
         else:
             loan_dict['is_overdue'] = False
@@ -589,15 +458,15 @@ def loans():
 @login_required
 def add_loan():
     conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=extras.DictCursor)
     
     if request.method == 'POST':
         client_id = int(request.form['client_id'])
-        amount = float(request.form['amount'])
-        interest_rate = float(request.form['interest_rate'])
+        amount = Decimal(request.form['amount'])
+        interest_rate = Decimal(request.form['interest_rate'])
         loan_type = request.form['loan_type']
         loan_date = datetime.datetime.strptime(request.form['loan_date'], '%Y-%m-%d').date()
         
-        # Calcular valores
         if loan_type == 'single':
             installments = 1
             total_amount = amount * (1 + interest_rate / 100)
@@ -607,14 +476,14 @@ def add_loan():
             installments = int(request.form['installments'])
             total_amount = amount * (1 + interest_rate / 100)
             installment_amount = total_amount / installments
-            due_date = loan_date + datetime.timedelta(days=30)  # Primeira parcela
+            due_date = loan_date + datetime.timedelta(days=30)
         
         org_id = get_user_organization()
-        conn.execute('''
+        conn.cursor().execute('''
             INSERT INTO loans (client_id, amount, interest_rate, loan_type, 
-                             installments, installment_amount, total_amount, 
-                             loan_date, due_date, organization_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                               installments, installment_amount, total_amount, 
+                               loan_date, due_date, organization_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ''', (client_id, amount, interest_rate, loan_type, 
               installments, installment_amount, total_amount, 
               loan_date, due_date, org_id))
@@ -625,7 +494,8 @@ def add_loan():
         return redirect(url_for('loans'))
     
     org_id = get_user_organization()
-    clients = conn.execute('SELECT * FROM clients WHERE organization_id = ? ORDER BY full_name', (org_id,)).fetchall()
+    cur.execute('SELECT * FROM clients WHERE organization_id = %s ORDER BY full_name', (org_id,))
+    clients = cur.fetchall()
     conn.close()
     
     return render_template('add_loan.html', clients=clients)
@@ -635,25 +505,29 @@ def add_loan():
 def loan_detail(loan_id):
     org_id = get_user_organization()
     conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=extras.DictCursor)
     
-    loan = conn.execute('''
+    cur.execute('''
         SELECT l.*, c.full_name, c.document, c.phone, c.email
         FROM loans l
         JOIN clients c ON l.client_id = c.id
-        WHERE l.id = ? AND l.organization_id = ?
-    ''', (loan_id, org_id)).fetchone()
+        WHERE l.id = %s AND l.organization_id = %s
+    ''', (loan_id, org_id))
+    loan = cur.fetchone()
     
-    payments = conn.execute('''
+    cur.execute('''
         SELECT * FROM payments 
-        WHERE loan_id = ? 
+        WHERE loan_id = %s 
         ORDER BY payment_date DESC
-    ''', (loan_id,)).fetchall()
+    ''', (loan_id,))
+    payments = cur.fetchall()
     
-    total_paid = conn.execute('''
+    cur.execute('''
         SELECT SUM(amount) as total 
         FROM payments 
-        WHERE loan_id = ?
-    ''', (loan_id,)).fetchone()
+        WHERE loan_id = %s
+    ''', (loan_id,))
+    total_paid = cur.fetchone()
     
     conn.close()
     
@@ -661,19 +535,18 @@ def loan_detail(loan_id):
         flash('Empréstimo não encontrado!')
         return redirect(url_for('loans'))
     
-    remaining = float(loan['total_amount']) - (float(total_paid['total']) if total_paid['total'] else 0)
+    remaining = float(loan['total_amount']) - (float(total_paid['total']) if total_paid and total_paid['total'] else 0)
     
-    # Verificar se está em atraso
     today = datetime.date.today()
-    due_date = datetime.datetime.strptime(loan['due_date'], '%Y-%m-%d').date()
+    due_date = loan['due_date']
     is_overdue = loan['status'] == 'active' and due_date < today
     
     return render_template('loan_detail.html', 
-                         loan=loan, 
-                         payments=payments, 
-                         total_paid=float(total_paid['total']) if total_paid['total'] else 0,
-                         remaining=remaining,
-                         is_overdue=is_overdue)
+                          loan=loan, 
+                          payments=payments, 
+                          total_paid=float(total_paid['total']) if total_paid and total_paid['total'] else 0,
+                          remaining=remaining,
+                          is_overdue=is_overdue)
 
 @app.route('/reports')
 @login_required
@@ -684,23 +557,25 @@ def reports():
 @login_required
 def add_payment(loan_id):
     org_id = get_user_organization()
-    amount = float(request.form['amount'])
+    amount = Decimal(request.form['amount'])
     payment_type = request.form['payment_type']
     payment_date = datetime.datetime.strptime(request.form['payment_date'], '%Y-%m-%d').date()
     notes = request.form.get('notes', '')
     
     conn = get_db_connection()
-    conn.execute('''
+    cur = conn.cursor()
+    cur.execute('''
         INSERT INTO payments (loan_id, amount, payment_type, payment_date, notes, organization_id)
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s)
     ''', (loan_id, amount, payment_type, payment_date, notes, org_id))
     
-    # Verificar se o empréstimo foi quitado
-    loan = conn.execute('SELECT total_amount FROM loans WHERE id = ?', (loan_id,)).fetchone()
-    total_paid = conn.execute('SELECT SUM(amount) as total FROM payments WHERE loan_id = ?', (loan_id,)).fetchone()
+    cur.execute('SELECT total_amount FROM loans WHERE id = %s', (loan_id,))
+    loan = cur.fetchone()
+    cur.execute('SELECT SUM(amount) as total FROM payments WHERE loan_id = %s', (loan_id,))
+    total_paid = cur.fetchone()
     
-    if total_paid['total'] and float(total_paid['total']) >= float(loan['total_amount']):
-        conn.execute('UPDATE loans SET status = "paid" WHERE id = ?', (loan_id,))
+    if total_paid and total_paid[0] and float(total_paid[0]) >= float(loan[0]):
+        cur.execute('UPDATE loans SET status = %s WHERE id = %s', ('paid', loan_id))
     
     conn.commit()
     conn.close()
@@ -714,49 +589,48 @@ def add_payment(loan_id):
 def api_profit_data():
     org_id = get_user_organization()
     conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=extras.DictCursor)
     
-    # Buscar dados de empréstimos por mês
-    monthly_data = conn.execute('''
+    cur.execute('''
         SELECT 
-            strftime('%Y', l.loan_date) as year,
-            strftime('%m', l.loan_date) as month,
+            EXTRACT(YEAR FROM l.loan_date) as year,
+            EXTRACT(MONTH FROM l.loan_date) as month,
             SUM(l.amount) as total_lent,
             COUNT(l.id) as loan_count
         FROM loans l
-        WHERE l.organization_id = ?
-        GROUP BY strftime('%Y-%m', l.loan_date)
+        WHERE l.organization_id = %s
+        GROUP BY EXTRACT(YEAR FROM l.loan_date), EXTRACT(MONTH FROM l.loan_date)
         ORDER BY year DESC, month DESC
-    ''', (org_id,)).fetchall()
+    ''', (org_id,))
+    monthly_data = cur.fetchall()
     
-    # Buscar dados de pagamentos por mês
-    payment_data = conn.execute('''
+    cur.execute('''
         SELECT 
-            strftime('%Y', p.payment_date) as year,
-            strftime('%m', p.payment_date) as month,
+            EXTRACT(YEAR FROM p.payment_date) as year,
+            EXTRACT(MONTH FROM p.payment_date) as month,
             SUM(p.amount) as total_received
         FROM payments p
-        WHERE p.organization_id = ?
-        GROUP BY strftime('%Y-%m', p.payment_date)
-    ''', (org_id,)).fetchall()
+        WHERE p.organization_id = %s
+        GROUP BY EXTRACT(YEAR FROM p.payment_date), EXTRACT(MONTH FROM p.payment_date)
+    ''', (org_id,))
+    payment_data = cur.fetchall()
     
     conn.close()
     
-    # Criar dicionário para facilitar a busca de pagamentos
     payments_dict = {}
     for payment in payment_data:
-        key = f"{payment['year']}-{payment['month']}"
+        key = f"{int(payment['year'])}-{int(payment['month']):02d}"
         payments_dict[key] = float(payment['total_received']) if payment['total_received'] else 0
     
-    # Combinar dados e calcular lucros
     profit_data = []
     month_names = {
-        '01': 'Janeiro', '02': 'Fevereiro', '03': 'Março', '04': 'Abril',
-        '05': 'Maio', '06': 'Junho', '07': 'Julho', '08': 'Agosto',
-        '09': 'Setembro', '10': 'Outubro', '11': 'Novembro', '12': 'Dezembro'
+        1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril',
+        5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto',
+        9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'
     }
     
     for loan_month in monthly_data:
-        key = f"{loan_month['year']}-{loan_month['month']}"
+        key = f"{int(loan_month['year'])}-{int(loan_month['month']):02d}"
         total_lent = float(loan_month['total_lent']) if loan_month['total_lent'] else 0
         total_received = payments_dict.get(key, 0)
         profit = total_received - total_lent
@@ -764,8 +638,8 @@ def api_profit_data():
         
         profit_data.append({
             'year': int(loan_month['year']),
-            'month': loan_month['month'],
-            'month_name': month_names.get(loan_month['month'], loan_month['month']),
+            'month': int(loan_month['month']),
+            'month_name': month_names.get(int(loan_month['month']), loan_month['month']),
             'total_lent': total_lent,
             'total_received': total_received,
             'profit': profit,
@@ -780,26 +654,28 @@ def api_profit_data():
 def api_dashboard_stats():
     org_id = get_user_organization()
     conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=extras.DictCursor)
     
-    # Dados para gráficos
-    monthly_loans = conn.execute('''
-        SELECT strftime('%Y-%m', loan_date) as month,
+    cur.execute('''
+        SELECT to_char(loan_date, 'YYYY-MM') as month,
                SUM(amount) as total_amount,
                COUNT(*) as loan_count
         FROM loans
-        WHERE loan_date >= date('now', '-12 months') AND organization_id = ?
-        GROUP BY strftime('%Y-%m', loan_date)
+        WHERE loan_date >= date_trunc('month', NOW() - INTERVAL '12 months') AND organization_id = %s
+        GROUP BY month
         ORDER BY month
-    ''', (org_id,)).fetchall()
+    ''', (org_id,))
+    monthly_loans = cur.fetchall()
     
-    payment_stats = conn.execute('''
-        SELECT strftime('%Y-%m', payment_date) as month,
+    cur.execute('''
+        SELECT to_char(payment_date, 'YYYY-MM') as month,
                SUM(amount) as total_amount
         FROM payments
-        WHERE payment_date >= date('now', '-12 months') AND organization_id = ?
-        GROUP BY strftime('%Y-%m', payment_date)
+        WHERE payment_date >= date_trunc('month', NOW() - INTERVAL '12 months') AND organization_id = %s
+        GROUP BY month
         ORDER BY month
-    ''', (org_id,)).fetchall()
+    ''', (org_id,))
+    payment_stats = cur.fetchall()
     
     conn.close()
     
@@ -808,7 +684,7 @@ def api_dashboard_stats():
         'payment_stats': [dict(row) for row in payment_stats]
     })
 
-if __name__ == '__main__':
-    init_db()
-    insert_sample_data()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+# O código abaixo não é executado no Vercel
+# Remova as chamadas a init_db() e insert_sample_data() e o bloco if __name__ == '__main__':
+# O Vercel gerencia a execução do seu aplicativo
+# O Banco de dados foi criado remotamente.
